@@ -1,0 +1,208 @@
+# Customise this file, documentation can be found here:
+# https://github.com/fastlane/fastlane/tree/master/fastlane/docs
+# All available actions: https://docs.fastlane.tools/actions
+# can also be listed using the `fastlane actions` command
+
+# Change the syntax highlighting to Ruby
+# All lines starting with a # are ignored when running `fastlane`
+
+# If you want to automatically update fastlane if a new version is available:
+# update_fastlane
+
+# This is the minimum version number required.
+# Update this, if you use features of a newer version
+fastlane_version "2.37.0"
+
+default_platform :ios
+
+############################## GLOBAL VARS ##############################
+
+$targetName = "IBA Members Directory"
+$appBundleIdentifier = "com.IBA.IBA-Members-Directory"
+$appBundleIdentifierDev = "com.IBA.IBA-Members-Directory.dev"
+$appBundleIdentifierStaging = "com.IBA.IBA-Members-Directory.staging"
+$appleUsername = "nigel.richards@int-bar.org"
+$workspaceName = "IBA Members Directory.xcworkspace"
+$projectName = "IBA Members Directory.xcodeproj"
+$ipaFilename = "IBA Members Directory.ipa"
+$plistPath = "./IBA Members Directory/Info.plist"
+$itcTeamId = "119019248"
+$crashlyticsTesterGroups = ["iba-testers"]
+$certificateRepoURL = "https://compsoft-dev-team@bitbucket.org/compsoft-holdings/iba-members-ios-certificates.git"
+ENV["SLACK_URL"] = "https://hooks.slack.com/services/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"
+
+############################## PRE ##############################
+
+platform :ios do
+before_all do
+  xcode_select("/Applications/Xcode9.3.app")
+
+  unlock_keychain(
+    path: "~/Library/Keychains/login.keychain"
+  )
+  #ensure_git_status_clean
+
+  Dir.chdir("..") do
+    sh "./scripts/remove_pods.sh"
+  end
+
+  BUILD_NUMBER = ENV["BUILD_NUMBER"]
+  set_info_plist_value(path: $plistPath, key: "CFBundleVersion", value: "#{BUILD_NUMBER}")
+
+  cocoapods(
+    clean: true
+  )
+
+end
+
+#desc "Runs all the tests"
+#lane :test do
+#  scan
+#end
+
+
+
+######################### PUBLIC LANES ##########################
+
+lane :testing do
+  fabric(scheme: "Testing")
+end
+
+lane :staging do
+  itc(scheme: "Staging")
+end
+
+lane :production do
+  itc(scheme: "Production")
+end
+
+#------------------------- Crashlytics -------------------------#
+
+private_lane :fabric do |options|
+  scheme = options[:scheme]
+
+  build(
+    scheme: scheme
+  )
+
+  environment = scheme.upcase
+
+  crashlytics(
+    api_token: "67fe40f841780da3ded7c7398083717dc8eab818",
+    build_secret: "cc3c4a4138fb275aa0c80b6728fb89524d739bcb9c873e9853986d70839b2a8b",
+    ipa_path: $ipaFilename,
+    notes: "Running on #{environment}",
+    groups: $crashlyticsTesterGroups
+  )
+
+  post_to_slack(scheme: scheme, destination: "Crashlytics")
+end
+
+#--------------------------- App Store -------------------------#
+
+private_lane :itc do |options|
+  scheme = options[:scheme]
+  build(
+    scheme: scheme
+  )
+
+  pilot(
+    ipa: $ipaFilename,
+    team_id: $itcTeamId,
+    skip_submission: true,
+    skip_waiting_for_build_processing: true
+  )
+  #deliver(force: true)
+  post_to_slack(scheme: scheme, destination: "TestFlight")
+
+end
+
+############################# UTIL ##############################
+
+private_lane :build do |options|
+  scheme = options[:scheme]
+
+  register_devices(username: $appleUsername,
+  devices: {
+              "Test iPhone 8" => "9c03f041f8e24cac258ed0f7600984e95dfa83c3",
+              "Daniels iPhone X" => "8903c7c2a4b87aebcfbdd15b919c6dd59831b2d2"
+            }
+)
+
+
+  if scheme == "Testing"
+    match(git_url: $certificateRepoURL,
+      username: $appleUsername,
+      type: "adhoc",
+      app_identifier: $appBundleIdentifierDev
+    )
+  elsif scheme == "Staging"
+    match(git_url: $certificateRepoURL,
+      username: $appleUsername,
+      type: "appstore",
+      app_identifier: $appBundleIdentifierStaging
+    )
+  else
+    match(git_url: $certificateRepoURL,
+      username: $appleUsername,
+      type: "appstore",
+      app_identifier: $appBundleIdentifier
+    )
+  end
+
+
+  method = "app-store"
+  if scheme == "Testing"
+    method = "ad-hoc"
+  end
+
+  gym(
+    export_method: method,
+    scheme: "#{$targetName} #{scheme}",
+    configuration: scheme,
+    clean: true,
+    include_bitcode: true,
+    workspace: $workspaceName,
+    output_name: $ipaFilename,
+    xcargs: "ARCHIVE=YES" # Used to tell the Fabric run script to upload dSYM file
+  )
+
+end
+
+private_lane :post_to_slack do |options|
+  scheme      = options[:scheme]
+  version     = get_version_number(xcodeproj: $projectName)
+  build       = get_build_number(xcodeproj: $projectName)
+  environment = scheme.upcase
+  destination = options[:destination]
+
+  slack(
+    message: "New :ios: *#{version}* (#{BUILD_NUMBER}) running `#{environment}` has been submitted to *#{destination}*  :rocket:",
+  )
+  desc "New :ios: *#{version}* (#{build}) running `#{environment}` has been submitted to *#{destination}*  :rocket:"
+
+end
+
+############################# POST ##############################
+after_all do |lane|
+  # This block is called, only if the executed lane was successful
+
+  #slack(
+  #  message: "Successfully deployed new App Update."
+  #)
+end
+
+error do |lane, exception|
+  #slack(
+  #  message: exception.message,
+  #  success: false
+  #)
+end
+end
+
+
+# More information about multiple platforms in fastlane: https://github.com/fastlane/fastlane/blob/master/fastlane/docs/Platforms.md
+# All available actions: https://docs.fastlane.tools/actions
+
+# fastlane reports which actions are used. No personal data is recorded.
+# Learn more at https://github.com/fastlane/fastlane#metrics

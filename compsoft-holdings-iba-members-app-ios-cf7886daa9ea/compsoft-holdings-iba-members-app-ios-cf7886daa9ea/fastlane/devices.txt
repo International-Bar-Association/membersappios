@@ -1,0 +1,3 @@
+Device ID	Device Name
+e4d841d95bd3518786d84f6c147849b7005c65ca	Marks iPhone 7
+785508d17e38f536ac84a2adadd59182daa13ebf	Mike's iPhone 7
