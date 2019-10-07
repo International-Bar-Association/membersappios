@@ -1,0 +1,29 @@
+# Uncomment this line to define a global platform for your project
+platform :ios, '9.0'
+use_frameworks!
+
+workspace 'IBA Members Directory'
+
+# ignore all warnings from all pods
+inhibit_all_warnings!
+
+target 'IBA Members Directory' do
+    
+    pod 'Alamofire'
+    pod 'AlamofireObjectMapper'
+    pod 'JSQMessagesViewController'
+    pod 'Fabric', '~> 1.7.11'
+    pod 'Crashlytics', '~> 3.10.7'
+    pod 'UrbanAirship-iOS-SDK'
+    pod 'ARSLineProgress'
+    pod 'Firebase/Core'
+end
+
+post_install do |installer|
+    installer.pods_project.targets.each do |target|
+        target.build_configurations.each do |config|
+            config.build_settings['SWIFT_VERSION'] = '3.0'
+            config.build_settings['ENABLE_BITCODE'] = 'YES'
+        end
+    end
+end
